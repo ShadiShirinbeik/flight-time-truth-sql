@@ -142,3 +142,169 @@ FROM calculate_match_flag;
  *   So a low match rate here does not mean the data is wrong. It means our calculation
  *   is still missing time zone and date information.
  */
+
+
+/* ------------------------------------------------------------
+ * Question_5: In which time zone is each flight's departure and arrival?
+ * ------------------------------------------------------------
+ * Task:
+ * - Add the time zone of the origin and destination airport (origin_tz, dest_tz) as INTERVAL.
+ * - Convert dep_time_f and arr_time_f to UTC (dep_time_f_utc, arr_time_f_utc).
+ * - Calculate flight_duration_f_utc and the percentage of flights where it
+ *   matches actual_elapsed_time_f (rounded to two decimals).
+ * 
+ * Approach:
+ * 1. converted            -> HHMM to TIME, minutes to INTERVAL, tz (hours) to INTERVAL
+ * 2. calculate_utc        -> UTC time = local time - tz, then arrival - departure
+ * 3. calculate_match_flag -> 1 if both durations are equal, otherwise 0
+ * 4. Final SELECT         -> match count, total count, match rate
+ */
+
+WITH converted AS (
+    SELECT
+	    f.flight_date,
+	    f.origin,
+	    f.dest,
+	    f.dep_time,
+        MAKE_TIME(f.dep_time / 100, f.dep_time % 100, 0) AS dep_time_f,
+        MAKE_TIME(f.arr_time / 100, f.arr_time % 100, 0) AS arr_time_f,
+        MAKE_INTERVAL(mins => f.actual_elapsed_time)     AS actual_elapsed_time_f,
+        a_origin.tz * INTERVAL '1 hour'                  AS origin_tz,
+        a_dest.tz   * INTERVAL '1 hour'                  AS dest_tz
+    FROM flights AS f
+    JOIN airports AS a_origin
+        ON f.origin = a_origin.faa
+    JOIN airports AS a_dest
+        ON f.dest = a_dest.faa
+),
+calculate_utc AS (
+    SELECT
+        actual_elapsed_time_f,
+        dep_time_f - origin_tz                          AS dep_time_f_utc,
+        arr_time_f - dest_tz                            AS arr_time_f_utc,
+        (arr_time_f - dest_tz) - (dep_time_f - origin_tz) AS flight_duration_f_utc
+    FROM converted
+),
+calculate_match_flag AS (
+    SELECT
+        actual_elapsed_time_f,
+        flight_duration_f_utc,
+        CASE
+            WHEN flight_duration_f_utc = actual_elapsed_time_f THEN 1
+            ELSE 0
+        END AS match_flag
+    FROM calculate_utc
+)
+SELECT
+    SUM(match_flag)                    AS number_of_same_values,
+    COUNT(*)                           AS total_count,
+    ROUND(AVG(match_flag) * 100.0, 2)  AS same_value_pct
+FROM calculate_match_flag;
+
+/* Insight:
+ * - Converting to UTC raised the match rate from 46.11% to 80.31%.
+ *   Among completed flights, it is 83.3%. Time zones were the biggest reason for the mismatches.
+ * - About 224,000 flights (13.9%) are still off by exactly 24 hours.
+ *   These flights cross midnight in UTC, and the TIME type has no date, so the result "wraps around".
+ */
+
+
+/* ------------------------------------------------------------
+ * Question_6: Are overnight flights causing the remaining mismatches?
+ * ------------------------------------------------------------
+ * Task:
+ * - Find what is special about flight_duration_f_utc for overnight flights.
+ * - Count the flights that arrive after midnight UTC.
+ * - Fix them and calculate the match rate again.
+ *
+ * Approach:
+ * 1. converted            -> HHMM to TIME, minutes to INTERVAL, tz to INTERVAL
+ * 2. calculate_utc        -> local time - tz = UTC time
+ * 3. calculate_duration   -> arrival - departure; flag flights that arrive after midnight UTC
+ * 4. fix_overnight        -> add 24 hours to overnight flights
+ * 5. calculate_match_flag -> compare durations before and after the fix
+ * 6. Final SELECT         -> overnight count and match rate before vs. after
+ *
+ * Tip: to see the negative durations (7.1), replace the final SELECT with:
+ *      SELECT * FROM calculate_duration ORDER BY flight_duration_f_utc;
+ */
+
+
+CREATE OR REPLACE VIEW flights_utc AS
+WITH converted AS (
+    SELECT
+        f.flight_date,
+        f.airline,
+        f.flight_number,
+        f.origin,
+        f.dest,
+        MAKE_TIME(f.dep_time / 100, f.dep_time % 100, 0) AS dep_time_f,
+        MAKE_TIME(f.arr_time / 100, f.arr_time % 100, 0) AS arr_time_f,
+        MAKE_INTERVAL(mins => f.actual_elapsed_time)     AS actual_elapsed_time_f,
+        a_origin.tz * INTERVAL '1 hour'                  AS origin_tz,
+        a_dest.tz   * INTERVAL '1 hour'                  AS dest_tz
+    FROM flights AS f
+    JOIN airports AS a_origin
+        ON f.origin = a_origin.faa
+    JOIN airports AS a_dest
+        ON f.dest = a_dest.faa
+)
+SELECT
+    *,
+    dep_time_f - origin_tz                            AS dep_time_f_utc,
+    arr_time_f - dest_tz                              AS arr_time_f_utc,
+    (arr_time_f - dest_tz) - (dep_time_f - origin_tz) AS flight_duration_f_utc
+FROM converted;
+
+
+SELECT
+    origin,
+    dest,
+    dep_time_f_utc,
+    arr_time_f_utc,
+    flight_duration_f_utc,
+    actual_elapsed_time_f
+FROM flights_utc
+ORDER BY flight_duration_f_utc;
+
+
+SELECT COUNT(*) AS flights_arriving_after_midnight_utc
+FROM flights_utc
+WHERE arr_time_f_utc < dep_time_f_utc;
+
+
+WITH fixed_duration AS (
+    SELECT
+        actual_elapsed_time_f,
+        CASE
+            WHEN flight_duration_f_utc < INTERVAL '0'
+                THEN flight_duration_f_utc + INTERVAL '24 hours'
+            ELSE flight_duration_f_utc
+        END AS flight_duration_f_utc_fixed
+    FROM flights_utc
+),
+calculate_match_flag AS (
+    SELECT
+        *,
+        CASE
+            WHEN flight_duration_f_utc_fixed = actual_elapsed_time_f THEN 1
+            ELSE 0
+        END AS match_flag
+    FROM fixed_duration
+)
+SELECT
+    SUM(match_flag)                    AS number_of_same_values,
+    COUNT(*)                           AS total_count,
+    ROUND(AVG(match_flag) * 100.0, 2)  AS same_value_pct
+FROM calculate_match_flag;
+
+/* Result:
+ * total_count | overnight_flights | matches_before_fix | match_pct_before_fix | matches_after_fix | match_pct_after_fix
+ *   1,671,142 |           233,665 |          1,342,016 |                80.31 |         1,565,626 |               93.66
+ *
+ * Insight:
+ * - 233,665 flights (14%) arrive after midnight UTC.
+ * - Fixing them raised the match rate from 80.31% to 93.66% (97.13% of completed flights).
+ * - Almost all remaining mismatches are cancelled/diverted flights (no times).
+ * - Conclusion: actual_elapsed_time is reliable.
+ */
