@@ -45,14 +45,16 @@ Main columns used:
 ```
 flight-time-truth/
 ├── README.md
-├── report.html              ← visual report of the results
+├── index.html               ← redirection to the report file
+├── report/
+│   └── index.html           ← visual report of the results
 ├── data/
 │   ├── flights.rar          ← compressed flight data
 │   └── airports.csv
 └── sql/
     ├── 01_create_table.sql  ← creates the flights and airports tables
     ├── 02_load_data.sql     ← loads the CSV files and checks the row counts
-    └── analysis.sql         ← all analysis steps with results and insights
+    └── 03_analysis.sql         ← all analysis steps with results and insights
 ```
 
 ## How to run
