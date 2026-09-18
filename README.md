@@ -4,7 +4,7 @@
 
 A SQL data quality analysis of 1.67 million US domestic flights. I rebuilt each flight's duration from its departure and arrival times and checked whether it matches the reported `actual_elapsed_time`.
 
-📊 **[View the full report](report.html)**: open `report.html` in your browser after cloning the repo.
+📊 **[View the full report](https://shadishirinbeik.github.io/flight-time-truth-sql/report/index.html)**: open `report.html` in your browser after cloning the repo.
 
 ---
 
