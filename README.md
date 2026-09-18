@@ -17,15 +17,17 @@ A SQL data quality analysis of 1.67 million US domestic flights. I rebuilt each 
 | 3 | Converted local times to UTC using airport time zones | 80.31% |
 | 4 | Added 24 hours to flights that land after midnight UTC | **93.66%** |
 
-- **The column is reliable.** Among completed flights, 97.13% match exactly. Almost all remaining mismatches have a clear technical cause.
-- **Cancelled and diverted flights** (59,268) have no times, so they can't match.
+- **The column is reliable.** Among completed flights, 97.1% match exactly. Every large gap had a technical cause (data type, time zone, midnight), not a wrong value.
+- **Time zones** were the biggest single cause: fixing them moved the match rate from 46% to 80%.
+- **233,665 flights (14%)** land after midnight UTC, which made their duration negative until the 24-hour fix.
+- **Cancelled and diverted flights** (59,268, or 3.55%) have no departure or arrival time, so they can never match.
 
 ## Data
 
 | File | Description |
 |---|---|
 | `data/flights.rar` | 1,671,142 flights, Jan 1 – Mar 31, 2026, 17 columns (compressed; the CSV is 147 MB, over GitHub's 100 MB limit) |
-| `data/airports.csv` | Airport reference data: code (`faa`), name, location, UTC offset (`tz`), daylight saving rule (`dst`) |
+| `data/airports.csv` | Airport reference data: code (`faa`), name, location, UTC offset (`tz`) |
 
 **Source:** US Department of Transportation, Bureau of Transportation Statistics: [Reporting Carrier On-Time Performance (1987–present)](https://transtats.bts.gov/DatabaseInfo.asp?QO_VQ=EFD). Column definitions: [BTS field reference](https://www.transtats.bts.gov/Fields.asp?gnoyr_VQ=FGJ).
 
@@ -50,7 +52,7 @@ flight-time-truth/
 └── sql/
     ├── 01_create_table.sql  ← creates the flights and airports tables
     ├── 02_load_data.sql     ← loads the CSV files and checks the row counts
-    └── 03_analysis.sql         ← all analysis steps with results and insights
+    └── analysis.sql         ← all analysis steps with results and insights
 ```
 
 ## How to run
@@ -61,7 +63,7 @@ flight-time-truth/
 4. Run the scripts in order:
    1. `sql/01_create_table.sql`
    2. `sql/02_load_data.sql` (expected: 1,671,142 flights, no flights without a matching airport)
-   3. `sql/03_analysis.sql`, one section at a time
+   3. `sql/analysis.sql`, one section at a time
 
 ## SQL techniques used
 
@@ -74,9 +76,14 @@ flight-time-truth/
 
 ## Limitations
 
-- The `tz` column holds one fixed UTC offset per airport, so daylight saving time is explained, not corrected, in the SQL.
+- The `tz` column holds one fixed UTC offset per airport, which does not change during the year.
+- About 2.8% of flights still do not match; this group was not analyzed further.
 - The dataset covers only one quarter (Q1 2026) of US domestic flights.
 
+## Next steps
+
+- Look into the remaining 2.8% of mismatches.
+- Use the validated durations to compare scheduled and actual flight times per airline and route.
 
 ## A note on AI use
 
