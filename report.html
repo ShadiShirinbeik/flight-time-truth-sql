@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flight Time Truth – Report</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-0: #f5f4f1;
+    --surface-1: #fcfcfb;
+    --surface-2: #f0efec;
+    --border: #e2e1dc;
+    --grid: #e8e7e3;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #75746f;
+    --series-1: #2a78d6;   /* matched / match rate */
+    --series-2: #eb6834;   /* other mismatches */
+    --neutral-mark: #b9b8b2; /* cancelled / diverted (no data) */
+    --accent-soft: #e6f0fb;
+    --tip-bg: #0b0b0b;
+    --tip-text: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-0: #121211;
+      --surface-1: #1a1a19;
+      --surface-2: #242423;
+      --border: #33332f;
+      --grid: #2c2c29;
+      --text-primary: #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted: #9a998f;
+      --series-1: #3987e5;
+      --series-2: #d95926;
+      --neutral-mark: #5c5b56;
+      --accent-soft: #1c2b3d;
+      --tip-bg: #f5f4f1;
+      --tip-text: #0b0b0b;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-0: #121211;
+    --surface-1: #1a1a19;
+    --surface-2: #242423;
+    --border: #33332f;
+    --grid: #2c2c29;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #9a998f;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --neutral-mark: #5c5b56;
+    --accent-soft: #1c2b3d;
+    --tip-bg: #f5f4f1;
+    --tip-text: #0b0b0b;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--surface-0);
+    color: var(--text-primary);
+    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .page { max-width: 920px; margin: 0 auto; padding: 48px 16px 64px; }
+  header { margin-bottom: 40px; }
+  .eyebrow { color: var(--text-muted); font-size: 13px; letter-spacing: .06em; text-transform: uppercase; margin: 0 0 8px; }
+  h1 { font-size: clamp(28px, 5vw, 40px); line-height: 1.15; margin: 0 0 12px; letter-spacing: -.01em; }
+  h2 { font-size: 22px; margin: 0 0 6px; }
+  h3 { font-size: 16px; margin: 0 0 4px; }
+  p { margin: 0 0 14px; }
+  .lead { font-size: 18px; color: var(--text-secondary); max-width: 680px; }
+  .muted { color: var(--text-muted); }
+  code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: .9em; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
+
+  section { margin-top: 44px; }
+  .card {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+  }
+  .card + .card { margin-top: 16px; }
+
+  /* KPI tiles */
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+  .kpi { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; }
+  .kpi .value { font-size: 32px; font-weight: 650; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .kpi .label { color: var(--text-secondary); font-size: 14px; margin-top: 6px; }
+
+  /* Answer box */
+  .answer { background: var(--accent-soft); border-radius: 12px; padding: 20px 24px; }
+  .answer strong { display: block; font-size: 18px; margin-bottom: 4px; }
+
+  /* Horizontal bar charts */
+  .chart-sub { color: var(--text-secondary); font-size: 14px; margin-bottom: 20px; }
+  .hbar { display: grid; grid-template-columns: minmax(110px, 34%) 1fr; gap: 10px 14px; align-items: center; }
+  .hbar .cat { font-size: 14px; color: var(--text-secondary); line-height: 1.3; }
+  .hbar .cat b { color: var(--text-primary); font-weight: 600; display: block; }
+  .track { position: relative; height: 24px; border-left: 1px solid var(--grid); }
+  .bar {
+    height: 24px;
+    border-radius: 0 4px 4px 0;
+    min-width: 3px;
+    cursor: default;
+    outline-offset: 2px;
+  }
+  .bar.s1 { background: var(--series-1); }
+  .bar.s2 { background: var(--series-2); }
+  .val {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    font-size: 13px; font-weight: 600; color: var(--text-primary);
+    font-variant-numeric: tabular-nums; white-space: nowrap; padding-left: 8px;
+  }
+  .bar:hover, .bar:focus-visible, .seg:hover, .seg:focus-visible { filter: brightness(1.12); }
+
+  /* Stacked 100% bar */
+  .stack { display: flex; gap: 2px; height: 40px; background: var(--surface-1); }
+  .seg { height: 100%; min-width: 3px; }
+  .seg:first-child { border-radius: 4px 0 0 4px; }
+  .seg:last-child { border-radius: 0 4px 4px 0; }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 16px; font-size: 14px; color: var(--text-secondary); }
+  .legend span { display: inline-flex; align-items: center; gap: 8px; }
+  .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+
+  /* Steps */
+  .steps { counter-reset: step; list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+  .steps li { counter-increment: step; position: relative; padding: 16px 20px 16px 64px; background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; }
+  .steps li::before {
+    content: counter(step);
+    position: absolute; left: 20px; top: 16px;
+    width: 28px; height: 28px; border-radius: 50%;
+    background: var(--surface-2); color: var(--text-primary);
+    font-weight: 650; font-size: 14px;
+    display: grid; place-items: center;
+  }
+  .steps p { margin: 0; color: var(--text-secondary); font-size: 15px; }
+
+  /* Tables */
+  details { margin-top: 18px; }
+  summary { cursor: pointer; color: var(--text-secondary); font-size: 14px; }
+  .table-wrap { overflow-x: auto; margin-top: 10px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+  th { color: var(--text-muted); font-weight: 600; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+  ul.clean { padding-left: 20px; margin: 0; }
+  ul.clean li { margin-bottom: 8px; }
+
+  .tip {
+    position: fixed; pointer-events: none; z-index: 10;
+    background: var(--tip-bg); color: var(--tip-text);
+    font-size: 13px; line-height: 1.4; padding: 8px 10px; border-radius: 6px;
+    max-width: 260px; opacity: 0; transition: opacity .08s;
+  }
+  .tip.on { opacity: 1; }
+
+  .theme-toggle {
+    float: right; background: var(--surface-1); color: var(--text-secondary);
+    border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px;
+    font: inherit; font-size: 13px; cursor: pointer;
+  }
+  footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 13px; }
+
+  @media (max-width: 560px) {
+    .hbar { grid-template-columns: 1fr; gap: 4px; }
+    .hbar .track { margin-bottom: 10px; }
+    .card { padding: 18px; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header>
+    <button class="theme-toggle" id="themeToggle" type="button">Toggle theme</button>
+    <p class="eyebrow">SQL data quality analysis · PostgreSQL</p>
+    <h1>Flight Time Truth</h1>
+    <p class="lead">Can we trust the <code>actual_elapsed_time</code> column in US flight data? This report rebuilds each flight's duration from departure and arrival times and checks it against the reported value.</p>
+    <p class="muted">Data: US DOT Bureau of Transportation Statistics, Reporting Carrier On-Time Performance · Jan 1 – Mar 31, 2026 · 1,671,142 flights · 13 airlines · 346 airports</p>
+  </header>
+
+  <div class="answer">
+    <strong>Answer: yes, the column is reliable.</strong>
+    After correcting for time zones and overnight flights, the recalculated duration matches the reported one for <b>97.1%</b> of completed flights. Every large gap had a technical cause, not a wrong value.
+  </div>
+
+  <section>
+    <div class="kpis">
+      <div class="kpi"><div class="value">1.67M</div><div class="label">flights analyzed</div></div>
+      <div class="kpi"><div class="value">1.75% → 93.66%</div><div class="label">match rate, first vs. final step (all flights)</div></div>
+      <div class="kpi"><div class="value">97.1%</div><div class="label">match rate of completed flights</div></div>
+      <div class="kpi"><div class="value">233,665</div><div class="label">flights landing after midnight UTC</div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>How the match rate improved</h2>
+    <p class="chart-sub">Share of all flights where the recalculated duration equals <code>actual_elapsed_time</code>, after each fix</p>
+    <div class="card">
+      <div class="hbar" id="stepsChart"></div>
+      <details>
+        <summary>Show data table</summary>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Step</th><th class="num">Matching flights</th><th class="num">Match rate</th></tr></thead>
+            <tbody>
+              <tr><td>1. Raw HHMM subtraction</td><td class="num">29,257</td><td class="num">1.75%</td></tr>
+              <tr><td>2. Convert to TIME / INTERVAL</td><td class="num">770,598</td><td class="num">46.11%</td></tr>
+              <tr><td>3. Convert to UTC</td><td class="num">1,342,016</td><td class="num">80.31%</td></tr>
+              <tr><td>4. Fix overnight flights</td><td class="num">1,565,192</td><td class="num">93.66%</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <section>
+    <h2>Where every flight ended up</h2>
+    <p class="chart-sub">All 1,671,142 flights after the final step</p>
+    <div class="card">
+      <div class="stack" id="stackChart" role="img" aria-label="Matched 93.66 percent, cancelled or diverted 3.55 percent, other mismatches 2.79 percent"></div>
+      <div class="legend">
+        <span><i class="sw" style="background:var(--series-1)"></i>Matched &middot; 93.66%</span>
+        <span><i class="sw" style="background:var(--neutral-mark)"></i>Cancelled or diverted (no times) &middot; 3.55%</span>
+        <span><i class="sw" style="background:var(--series-2)"></i>Other mismatches &middot; 2.79%</span>
+      </div>
+      <details>
+        <summary>Show data table</summary>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Group</th><th class="num">Flights</th><th class="num">Share</th></tr></thead>
+            <tbody>
+              <tr><td>Matched</td><td class="num">1,565,192</td><td class="num">93.66%</td></tr>
+              <tr><td>Cancelled (55,006) or diverted (4,262)</td><td class="num">59,268</td><td class="num">3.55%</td></tr>
+              <tr><td>Other mismatches</td><td class="num">46,682</td><td class="num">2.79%</td></tr>
+              <tr><td><b>Total</b></td><td class="num"><b>1,671,142</b></td><td class="num"><b>100%</b></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </details>
+      <p class="chart-sub" style="margin:16px 0 0">Cancelled and diverted flights have no departure or arrival time, so they can never match. Looking only at completed flights, the match rate is 97.1%.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Method</h2>
+    <ol class="steps">
+      <li><h3>Raw subtraction</h3><p><code>arr_time - dep_time</code> fails because the times are HHMM numbers (<code>1300 - 1255 = 45</code>, but the real gap is 5 minutes) and are in local time.</p></li>
+      <li><h3>Proper data types</h3><p><code>MAKE_TIME(hhmm / 100, hhmm % 100, 0)</code> turns clock values into <code>TIME</code>; <code>MAKE_INTERVAL(mins =&gt; …)</code> turns minutes into <code>INTERVAL</code>.</p></li>
+      <li><h3>One time zone</h3><p>Joined the <code>airports</code> table twice (origin and destination) and converted both times to UTC: <code>local time − tz</code>.</p></li>
+      <li><h3>Overnight flights</h3><p>233,665 flights (14%) land after midnight UTC, so their duration came out negative. Adding 24 hours fixed them.</p></li>
+      <li><h3>Explain what is left</h3><p>Checked the remaining mismatches: most of them are cancelled or diverted flights, which have no times at all.</p></li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Key takeaways</h2>
+    <div class="card">
+      <ul class="clean">
+        <li><b>The reported flight duration can be trusted.</b> Every large gap had a clear technical cause, not a data error.</li>
+        <li><b>Local times need care.</b> Comparing times from different airports without a time zone gave wrong results for more than a third of all flights.</li>
+        <li><b>Data types matter.</b> Treating HHMM clock values as plain numbers matched fewer than 2% of flights.</li>
+        <li><b>A low match rate is not proof of bad data.</b> Every step of the check removed a technical cause, not a data error.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Limitations</h2>
+    <div class="card">
+      <ul class="clean">
+        <li>The <code>tz</code> column holds one fixed UTC offset per airport, which does not change during the year.</li>
+        <li>About 2.8% of flights still do not match; this group was not analyzed further.</li>
+        <li>The data covers only one quarter (Q1 2026) of domestic US flights.</li>
+      </ul>
+    </div>
+  </section>
+
+  <footer>
+    This HTML report was created with AI assistance. The SQL queries and the analysis are in the <code>sql/</code> folder of this repository.<br>
+    Data source: US DOT Bureau of Transportation Statistics.
+  </footer>
+</div>
+
+<div class="tip" id="tip" role="tooltip"></div>
+
+<script>
+(function () {
+  var fmt = function (n) { return n.toLocaleString('en-US'); };
+
+  // Chart 1: match rate by step
+  var steps = [
+    { name: 'Raw HHMM subtraction', step: 'Step 1', pct: 1.75,  n: 29257 },
+    { name: 'TIME / INTERVAL',      step: 'Step 2', pct: 46.11, n: 770598 },
+    { name: 'Converted to UTC',     step: 'Step 3', pct: 80.31, n: 1342016 },
+    { name: 'Overnight fix',        step: 'Step 4', pct: 93.66, n: 1565192 }
+  ];
+  var sc = document.getElementById('stepsChart');
+  steps.forEach(function (d) {
+    sc.insertAdjacentHTML('beforeend',
+      '<div class="cat"><b>' + d.name + '</b>' + d.step + '</div>' +
+      '<div class="track"><div class="bar s1" tabindex="0" style="width:' + (d.pct * 0.86) + '%" ' +
+      'data-tip="<b>' + d.name + '</b><br>' + d.pct.toFixed(2) + '% match<br>' + fmt(d.n) + ' of 1,671,142 flights"></div>' +
+      '<span class="val" style="left:' + (d.pct * 0.86) + '%">' + d.pct.toFixed(2) + '%</span></div>');
+  });
+
+  // Chart 2: stacked 100% bar
+  var total = 1671142;
+  var segs = [
+    { name: 'Matched', n: 1565192, color: 'var(--series-1)' },
+    { name: 'Cancelled or diverted', n: 59268, color: 'var(--neutral-mark)' },
+    { name: 'Other mismatches', n: 46682, color: 'var(--series-2)' }
+  ];
+  var st = document.getElementById('stackChart');
+  segs.forEach(function (d) {
+    var pct = d.n / total * 100;
+    st.insertAdjacentHTML('beforeend',
+      '<div class="seg" tabindex="0" style="flex:' + d.n + ' 0 0;background:' + d.color + '" ' +
+      'data-tip="<b>' + d.name + '</b><br>' + fmt(d.n) + ' flights<br>' + pct.toFixed(2) + '%"></div>');
+  });
+
+  // Tooltip
+  var tip = document.getElementById('tip');
+  function show(el, x, y) {
+    tip.innerHTML = el.getAttribute('data-tip');
+    tip.classList.add('on');
+    var r = tip.getBoundingClientRect();
+    var left = Math.min(x + 14, window.innerWidth - r.width - 8);
+    var top = y - r.height - 12;
+    if (top < 8) top = y + 16;
+    tip.style.left = Math.max(8, left) + 'px';
+    tip.style.top = top + 'px';
+  }
+  function hide() { tip.classList.remove('on'); }
+  document.addEventListener('mousemove', function (e) {
+    var el = e.target.closest('[data-tip]');
+    if (el) show(el, e.clientX, e.clientY); else hide();
+  });
+  document.addEventListener('focusin', function (e) {
+    var el = e.target.closest('[data-tip]');
+    if (!el) return hide();
+    var r = el.getBoundingClientRect();
+    show(el, r.left + r.width / 2, r.top);
+  });
+  document.addEventListener('focusout', hide);
+  window.addEventListener('scroll', hide, { passive: true });
+
+  // Theme toggle
+  var root = document.documentElement;
+  try {
+    var saved = localStorage.getItem('ftt-theme');
+    if (saved) root.setAttribute('data-theme', saved);
+  } catch (e) {}
+  document.getElementById('themeToggle').addEventListener('click', function () {
+    var isDark = root.getAttribute('data-theme') === 'dark' ||
+      (!root.getAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    var next = isDark ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem('ftt-theme', next); } catch (e) {}
+  });
+})();
+</script>
+</body>
+</html>
